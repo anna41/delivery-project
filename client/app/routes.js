@@ -8,12 +8,10 @@ import AddingComponent from './components/AddingComponent';
 export default () =>(
 <BrowserRouter>
 <div className="home">
-  <MuiThemeProvider>
     <div className="top">
-	<FlatButton className="my-button"><Link to='/add' className="my-link">Add order</Link></FlatButton>
-	<FlatButton className="my-button"><Link to='/track' className="my-link">Track order</Link></FlatButton>
+  <Link to='/add' className="my-link">Add order</Link>
+  <Link to='/track' className="my-link">Track order</Link>
     </div>
-    </MuiThemeProvider>
     <Switch>
         <Route path="/add" exact component={AddingComponent} />
         <Route path="/track" exact component={TrackingComponent} />
