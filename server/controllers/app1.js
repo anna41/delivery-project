@@ -34,59 +34,59 @@ car.save(function(err){
       }
  */     
 /*
-Cars.update({"status": true}, { "status":false}, { multi: true })
-.then(console.log("Done"));
+Cars.update({"status": true}, { "status":false}, { multi: true }).exec();
 */
 /*
-Order.update({"status":  "delivered"}, { "status": 'in the store'}, { multi: true })
-.then(console.log("Done"));
+Order.update({"status":  "in the store"}, { "time":{"value":"100000"} }, { multi: true },function(err,res){console.log("Done")});
 */
 
-function send_a_car(order_id_,time_){
-Cars.findOneAndUpdate({status:false},{ $set: { order_id: order_id_,status:true,finish_time:new Date(Date.now()+time_) } },{new:true},function(err, result) { 
-  console.log("in the method");
-  if(result!=null){
-  var inThreeMinutes = new Date(Date.now()+time_);
-  console.log("start");
-  Order.update({"_id":  order_id_}, { "status": 'on the way'}, { multi: true }, function callback (err, numAffected) {
-    console.log("order on the way");
-  });
-  var job = new CronJob(inThreeMinutes, function() {
-    console.log(result.order_id);
-    console.log('running a task');
-   
-    Order.findOneAndUpdate({"_id":  order_id_}, { $set:{ "status": 'delivered'}},{new:true}, function callback (err, numAffected) {
-      console.log("order delivered");
-    });
-    Cars.findOneAndUpdate({"_id": result._id}, { $set:{ order_id: null,status:false,finish_time:null}},{new:true}, function callback (err, numAffected) {
-      console.log(result._id);
-      console.log("car is free");
-    });
-    
+function send_a_car(orderId,time_){
+  var finishTime = new Date(Date.now()+Number(time_));
+  console.log(orderId,'time: ',finishTime);
+  var car;
+ Cars.findOneAndUpdate({status:false},{ $set: { order_id: orderId,status:true,finish_time: finishTime} },{new:true})
+ .then(carResult =>{ 
+   if(carResult==null)
+    return;
+   car=carResult;
+   console.log("finding a car");
+   console.log(finishTime);
+   return Order.findOneAndUpdate({"_id":  orderId}, { "status": 'on the way'}, { multi: true });
+  })
+  .then(orderResult=>{
+    console.log('1');
+    console.log("time: ",finishTime);
+  var job = new CronJob(finishTime, function() {
+    Order.findOneAndUpdate({"_id":  orderResult._id}, { $set:{ "status": 'delivered'}},{new:true}).exec();
+    Cars.findOneAndUpdate({"_id": car._id}, { $set:{ order_id: null,status:false,finish_time:null}},{new:true}).exec();
     });
   job.start();
-  }
   });
 }
 
-// cron.schedule('* * * * *', function(){
-//   console.log('running a task every minute');
-//   Cars.find({status:false}).exec(function(err, carsResult) {
-//     var carCount = carsResult.length;
-//     console.log(carCount);
-//     Order.find({"status": 'in the store'}).sort({date: 1}).limit(carCount).exec(function(err, orderResult) {  
-//       if(!orderResult)
-//         return;
-//         console.log("count of orders:");
-//         console.log(orderResult.length);
-//         orderResult.forEach(order => {
-//             console.log("/////////");              
-//              console.log(order);
-//             send_a_car(order._id,order.time);       
-//       });      
-//   });
-//   });
-// });
+cron.schedule('* * * * *', function(){
+  console.log('running a task every minute');
+  Cars.find({status:false})
+  .then(carsResult=> {
+    var carCount = carsResult.length;
+    console.log("car count: ",carCount);
+    if(carCount==0)
+     return;
+    else
+     return Order.find({"status": 'in the store'}).sort({date: 1}).limit(carCount)
+  })
+  .then(orderResult=> {  
+      if(!orderResult)
+        return;
+        console.log("count of orders:");
+        console.log(orderResult.length);
+        orderResult.forEach(order => {
+            console.log("/////////");              
+             console.log(order._id);
+            send_a_car(order._id,order.time.value);       
+      });      
+  });
+});
 
 
 function calculateEstimatedTime(){
@@ -96,6 +96,7 @@ function calculateEstimatedTime(){
   var estimatedTime=[];    
   var counter=0;
   var orderCount=0;
+  var promiseArray=[];
   return Order.find({'status':'in the store'})
     .sort({date: 1})
     .then(data => {
@@ -122,7 +123,7 @@ function calculateEstimatedTime(){
        orderResult.forEach(order => {
          if(counterForCars!=carsCount){
           estimatedTime[counter] = new Date(+Date.now()+order.time.value*1000);
-          Order.findOneAndUpdate({"_id":  order._id}, { $set:{ "arrivalDate":  estimatedTime[counterForOrder]}},{new:true}).exec();
+          promiseArray.push(Order.findOneAndUpdate({"_id":  order._id}, { $set:{ "arrivalDate":  estimatedTime[counterForOrder]}},{new:true}));
           counter++;
           counterForCars++;
           counterForOrder++;
@@ -134,84 +135,44 @@ function calculateEstimatedTime(){
       while(counterForOrder!=orderCount){
         estTime.sort((a, b) => a - b);
         estTime[0] =new Date(+new Date(estTime[0])+orderResult[counterForOrder].time.value*1000);
-        Order.findOneAndUpdate({"_id":  orderResult[counterForOrder]._id}, { $set:{ "arrivalDate":  estTime[0]}},{new:true}).exec();
+        promiseArray.push(Order.findOneAndUpdate({"_id":  orderResult[counterForOrder]._id}, { $set:{ "arrivalDate":  estTime[0]}},{new:true}));
        counterForOrder++; 
       }
+      return Promise.all( promiseArray);
     })
+    .catch(()=>{console.log("you have some error")});
 }
-
-//calculateEstimatedTime();
-
-//   function calculateEstimatedTime(){
-//   console.log("1");
-//   var carCount;
-//   var counter=0;
-//   var allEstimatedTimes=[];
-//   return Cars.count({})
-//   .then(data => {
-//     carCount = data;
-//     console.log("2");
-//     console.log("cars: ",carCount);
-
-
-//     return Order.find({ $or:[ {'status':'in the store'}, {'status':'on the way'} ]})
-//     .sort({date: 1});
-//   })
-//   .then(orderResult => {
-//     if(!orderResult)
-//     return; 
-//     console.log("3");
-//     var orderCount=orderResult.length;
-//     var promiseArray = [];
-
-//     var estimatedTime=[];
-//     for(var j=0;j<carCount;j++){
-//        estimatedTime[j]=0;
-//     }
-//     var i=0;
-//     orderResult.forEach(order => {
-//        if(counter==orderCount)
-//         return;
-//        estimatedTime[i]+=order.time;
-//        promiseArray.push(Order.findOneAndUpdate({"_id":  order._id}, { $set:{ "arrivalDate": Date.now()+estimatedTime[i]}},{new:true}));           
-//        allEstimatedTimes[counter] = estimatedTime[i];
-//        counter++; 
-//        i++;
-//        if(i==carCount)
-//         i=0; 
-//     });   
-//     console.log("end method");    
-//     return Promise.all(promiseArray)           
-//   })
-//   .catch(console.log)
-// }
 
 
 function getArrivalTime(){
- calculateEstimatedTime().then(()=>{
-    return Order.find({ $or:[ {'status':'in the store'}, {'status':'on the way'} ]})
-  })
+  calculateEstimatedTime()
   .then(data => {
     data.forEach(order => {
       console.log('/////////');
-      console.log("for chosen odrer id: ", order._id, "arrival date is ",order.arrivalDate);
-   
+      console.log("for chosen odrer id: ", order._id, "arrival date is ",order.arrivalDate);   
+    })
+    .catch((err)=> {
+      console.log("error");
     });
   })
 }
 
 
 function getArrivalTimeForOneOrder(orderId){
-  calculateEstimatedTime().then(()=>{
-    return Order.findOne({"_id":  orderId});
+  calculateEstimatedTime()
+  .then(data =>{
+    data.forEach(order => {
+      if(order._id==orderId)
+       console.log("for one chosen odrer id: ", order._id, "arrival date is ",order.arrivalDate);
+    });
   })
-  .then(order => {
-    console.log("for chosen one odrer id: ", order._id, "arrival date is ",order.arrivalDate);
-  })
-}
+  .catch((err)=> {
+    console.log("error");
+  });
+  }
 
-getArrivalTime();
-getArrivalTimeForOneOrder("5aa30848fb6eff639cf3430c");
+//getArrivalTime();
+//getArrivalTimeForOneOrder("5aa30743fb6eff639cf3430b");
 
 db.close();
   });
