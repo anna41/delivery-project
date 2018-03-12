@@ -69,7 +69,8 @@ var carScheme = new Schema({
         "text":request.body.duration,
         "value":request.body.duration_v
       },
-      "distance": {
+      "distance":
+      {
         "text":request.body.distance,
         "value":request.body.distance_v
       },
